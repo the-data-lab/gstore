@@ -1,6 +1,8 @@
 # gstore
 Semi-external graph engine for trillion-edge graphs.
 
+NOTE: This code is little old. Will update the newer version by 20 november.
+
 ==========Help file==========
 We will be updating this file as and when required. 
 
