@@ -2159,7 +2159,7 @@ grid::wcc_mmap()
         }
         double end = mywtime();
         cout << "iteration time = " << end - start << endl;
-	    if (pr.iteration_finalize()) {
+	    if (0 == pr.iteration_finalize()) {
             break;
         }
         ++iteration;
@@ -2184,7 +2184,7 @@ grid::pagerank_mmap()
         start_edge_full.part_count = p_p;
         matrix<spart_t, index_t>* start_edge;
 	    spart_t n2 = 0;
-	    for(int iteration =0; iteration < 5; ++iteration) {
+	    for(int iteration =0; iteration < iteration_count; ++iteration) {
 	        for (part_t i = 0; i < p; ++i) {
 				index_t b_i = (i << bit_shift3);
                 start_edge = &start_edge_half;

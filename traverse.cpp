@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <asm/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <assert.h>
@@ -58,8 +59,15 @@ void traverse_t::init(vertex_t a_vert_count, vertex_t pivot, cid_t a_color )
     vert_count = a_vert_count;
     memset(front_count, 0, sizeof(vertex_t)* NUM_THDS);
     
-    vert_cid = (cid_t*)calloc(sizeof(cid_t), vert_count);
-    memset(vert_cid, invalid_cid, sizeof(cid_t)*vert_count);
+    vert_cid = (cid_t*)mmap(NULL, sizeof(cid_t)*vert_count, 
+                           PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0 , 0);
+    
+    if (MAP_FAILED == vert_cid) {
+        vert_cid = (cid_t*)calloc(sizeof(cid_t), vert_count);
+        memset(vert_cid, invalid_cid, sizeof(cid_t)*vert_count);
+    }
+    
     vert_cid[pivot] = a_color;
     color = a_color;
     iteration = 0;

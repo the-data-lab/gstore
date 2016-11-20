@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <asm/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <assert.h>
@@ -57,13 +58,18 @@ void bfs2_t::init(vertex_t vert_count, vertex_t root, bitmap_t* a_read_part)
 {
     memset(front_count, 0, sizeof(vertex_t)* NUM_THDS);
     
-    //depth = (depth_t*)calloc(sizeof(depth_t), vert_count);
-    if(posix_memalign((void**)&depth, 2097152 , sizeof(depth_t)*vert_count)) {
+    depth = (depth_t*)mmap(NULL, sizeof(depth_t)*vert_count, 
+                           PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0 , 0);
+    
+    if (MAP_FAILED == depth) {
+        if(posix_memalign((void**)&depth, 2097152 , sizeof(depth_t)*vert_count)) {
 			perror("posix_memalign");
             assert(0);
 			return ;
+        }
+        memset(depth, INFTY, sizeof(depth_t)*vert_count);
     }
-    memset(depth, INFTY, sizeof(depth_t)*vert_count);
     
     depth[root] = 1;
     level = 1;

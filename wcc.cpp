@@ -65,8 +65,8 @@ void wcc2_t::init(vertex_t a_vert_count)
     
     if (MAP_FAILED == vert_cid) {
         vert_cid = (cid_t*)calloc(sizeof(cid_t), vert_count);
+        memset(vert_cid, invalid_cid, sizeof(cid_t)*vert_count);
     }
-    memset(vert_cid, invalid_cid, sizeof(cid_t)*vert_count);
 
     cid = (cid_t*)mmap(NULL, sizeof(cid_t)*vert_count,
                            PROT_READ|PROT_WRITE,
@@ -74,8 +74,8 @@ void wcc2_t::init(vertex_t a_vert_count)
     
     if (MAP_FAILED == cid) {
         cid = (cid_t*)calloc(sizeof(cid_t), vert_count);
+        memset(cid, invalid_cid, sizeof(cid_t)*vert_count);
     }
-    memset(cid, invalid_cid, sizeof(cid_t)*vert_count);
     
     wcc_group = 0;
 	//cout << invalid_cid << endl;
