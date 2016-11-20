@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <asm/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <assert.h>
@@ -58,10 +59,22 @@ void wcc2_t::init(vertex_t a_vert_count)
     vert_count = a_vert_count;
     memset(front_count, 0, sizeof(vertex_t)* NUM_THDS);
     
-    vert_cid = (cid_t*)calloc(sizeof(cid_t), vert_count);
+    vert_cid = (cid_t*)mmap(NULL, sizeof(cid_t)*vert_count, 
+                           PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0 , 0);
+    
+    if (MAP_FAILED == vert_cid) {
+        vert_cid = (cid_t*)calloc(sizeof(cid_t), vert_count);
+    }
     memset(vert_cid, invalid_cid, sizeof(cid_t)*vert_count);
 
-    cid = (cid_t*)calloc(sizeof(cid_t), vert_count);
+    cid = (cid_t*)mmap(NULL, sizeof(cid_t)*vert_count,
+                           PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0 , 0);
+    
+    if (MAP_FAILED == cid) {
+        cid = (cid_t*)calloc(sizeof(cid_t), vert_count);
+    }
     memset(cid, invalid_cid, sizeof(cid_t)*vert_count);
     
     wcc_group = 0;
@@ -89,7 +102,7 @@ void wcc2_t::algo_mem_part(segment* seg)
     part_meta_t* meta = seg->meta;
 	index_t ctx_count = seg->ctx_count;
     
-    //#pragma omp for schedule (dynamic, 1) nowait
+    #pragma omp for schedule (dynamic, 1) nowait
     for (index_t l = 0; l < ctx_count; ++l) {
         get_ij(meta[l].start, big_i, big_j, i, j);
         get_s_ij(meta[l].end, i_end, j_end);
@@ -125,7 +138,7 @@ void wcc2_t::algo_mem_part(segment* seg)
 	    part_t j2 = j;
 	    part_t j_end1 = p_p - 1;
         
-        #pragma omp for schedule (dynamic, 1) nowait
+        //#pragma omp for schedule (dynamic, 1) nowait
 	    for (part_t i1 = i; i1 <= i_end; ++i1) {
             j2 = 0;
 		    if (i1 == i_end) j_end1 = j_end; 
@@ -176,7 +189,7 @@ index_t wcc2_t::wcc_onepart(edge_t* part_edge, index_t cedge, part_t i, part_t j
     #endif
 
     vertex_t v0,v1;
-    cid_t c0, c1, m;    
+    cid_t c0, c1, m, c00, c11;    
     int sw;
 
     for (uint64_t k = 0 ; k < cedge; ++k) {
@@ -203,15 +216,17 @@ index_t wcc2_t::wcc_onepart(edge_t* part_edge, index_t cedge, part_t i, part_t j
 			++t_front_count;
             break;
         case 3: // } else if (c0 != c1) {
-			if (c0 < c1) {
+		    c00 = cid[vert_cid0[part_edge[k].v0]];		
+		    c11 = cid[vert_cid1[part_edge[k].v1]];
+			if (c00 < c11) {
                 //if (cid[c1] == c1)
-                vert_cid1[v1] = c0;
-				map_cid(c1, c0);
+                vert_cid1[v1] = c00;
+				map_cid(c1, c00);
 			    ++t_front_count;
-			} else if (c0 > c1) {
+			} else if (c00 > c11) {
                 //if (cid[c0] == c0)
-                vert_cid0[v0] = c1;
-				map_cid(c0, c1);
+                vert_cid0[v0] = c11;
+				map_cid(c0, c11);
 			    ++t_front_count;
 			}
             break;
@@ -234,7 +249,7 @@ index_t wcc2_t::wcc_onepart2(edge_t* part_edge, index_t cedge, part_t i, part_t 
     cid_t* vert_cid1 = vert_cid;
     #endif
 
-    cid_t c0, c1;    
+    cid_t c0, c1, c00, c11;    
     vertex_t v0, v1;
     for (uint64_t k = 0 ; k < cedge; ++k) {
   
@@ -242,16 +257,20 @@ index_t wcc2_t::wcc_onepart2(edge_t* part_edge, index_t cedge, part_t i, part_t 
         v1 = part_edge[k].v1;
 		c0 = vert_cid0[part_edge[k].v0];		
 		c1 = vert_cid1[part_edge[k].v1];
+		c00 = cid[vert_cid0[part_edge[k].v0]];		
+		c11 = cid[vert_cid1[part_edge[k].v1]];
         
-        if (c0 < c1) {
+        if (c00 < c11) {
             //if (cid[c1] == c1)
-            vert_cid1[v1] = c0;
-            map_cid(c1, c0);
+            vert_cid1[v1] = c00;
+            //map_cid(c11, c00);
+            map_cid(c1, c00);
             ++t_front_count;
-        } else if (c0 > c1) {
+        } else if (c00 > c11) {
             //if (cid[c0] == c0)
-            vert_cid0[v0] = c1;
-            map_cid(c0, c1);
+            vert_cid0[v0] = c11;
+            //map_cid(c00, c11);
+            map_cid(c0, c11);
             ++t_front_count;
         }
     }
@@ -316,7 +335,7 @@ int wcc2_t::iteration_finalize()
         ++count;
         cout << "WCC count = " << count << endl;
         cout << "wcc_group used <debug> =" << wcc_group << endl;
-        return 1;
+        return 0;
     }
 
     /*
@@ -347,10 +366,10 @@ int wcc2_t::iteration_finalize()
         cout << "Max size Component vertices = " << max_cont << endl;
         cout << "WCC count = " << count << endl;
         cout << "wcc_group used <debug> =" << wcc_group << endl;
-		return 1;
+		return 0;
 	}
     */
-	#pragma omp parallel for //num_threads (NUM_THDS) 
+	#pragma omp parallel for num_threads (NUM_THDS) 
     for(cid_t i = 0; i < wcc_group; i++) {
 		cid_t n = i;
 		cid_t m = cid[n];
@@ -362,7 +381,7 @@ int wcc2_t::iteration_finalize()
 		cid[i] = m;
     }
 
-	#pragma omp parallel for //num_threads (NUM_THDS) 
+	#pragma omp parallel for num_threads (NUM_THDS) 
 	for (vertex_t i = 0; i < vert_count; ++i) {
         if (vert_cid[i] == invalid_cid) continue;
 		if(cid[vert_cid[i]] < vert_cid[i]) {
@@ -372,6 +391,6 @@ int wcc2_t::iteration_finalize()
 
     front_count[0] = 0;
     //calc_part_needed();
-   return 0; 
+   return 1; 
 }
     

@@ -36,6 +36,7 @@
 #include <string.h>
 #include "list.h"
 #include "bitmap.h"
+#include <libaio.h>
 
 using namespace std;
 
@@ -612,6 +613,7 @@ public:
 
 public:
     void do_algo(algo_t* algo);
+    void do_algo_prop(algo_t& algo);
     void bfs();
     void bfs2();
     void bfs_mmap();
@@ -621,6 +623,7 @@ public:
     void kcore_mmap(int kc);
 	void wcc2();
 	void wcc2_mmap();
+    void traverse();
     void wcc();
     void wcc_mmap();
     void wcc_init(wcc_t* algo);
@@ -682,13 +685,20 @@ inline bool operator < (const part_cache_t & o1, const part_cache_t& o2)
     return (o1.start < o2.start);
 }
 
+typedef struct __aio_meta {
+    struct io_event* events;
+    struct iocb** cb_list;
+    io_context_t  ctx;
+    int busy;
+} aio_meta_t;
 
 class io_driver {
 public:
     size_t read_aio_random(segment* seg);
-    struct io_event* events;
-    struct iocb** cb_list;
-    index_t ctx_count1;
+    int wait_aio_completion();
+    
+private:
+    aio_meta_t* aio_meta;
 
 public:
     io_driver();

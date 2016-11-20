@@ -23,6 +23,8 @@ DEPS=gstore.cpp\
 		pr.h\
 		bfs.h\
 		bfs2.h\
+		traverse.h\
+		traverse.cpp\
 		Makefile
 
 SRC=gstore.cpp\
@@ -32,7 +34,9 @@ SRC=gstore.cpp\
 		kcore.cpp\
 		util.cpp\
 		wcc.cpp\
+		traverse.cpp\
 	
+all:${EXE2} ${EXE1}
 
 ${EXE1}: $(DEPS)
 	${CC} $(CCFLAGS) -DHALF_GRID ${SRC} -o ${EXE1} -laio

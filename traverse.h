@@ -29,29 +29,28 @@
  * along with G-Store.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _BFS_H_
-#define _BFS_H_
+#ifndef _TRAVERSE_H_
+#define _TRAVERSE_H_
 
 #include "algo.h"
 
-extern const depth_t INFTY;
+extern grid* g;
 
+typedef uint32_t cid_t;
 
-class bfs_t : public algo_t {
+class traverse_t : public algo_t  {
 public:
+    vertex_t    vert_count;
+	cid_t*		vert_cid;
     vertex_t front_count[NUM_THDS];
-    depth_t* depth;
-
-    depth_t level;
-    bitmap_t* read_part;
-
+    cid_t       color;
+    int iteration;
+	
 public:
-    void init(vertex_t vert_count, vertex_t root, bitmap_t* read_part);
-    index_t bfs_onepart(edge_t* part_edge, index_t cedge, part_t i, part_t j);
-    index_t bfs_onepart_col(edge_t* part_edge, index_t cedge, part_t i, part_t j);
-    index_t bfs_onepart_row(edge_t* part_edge, index_t cedge, part_t i, part_t j);
-    void algo_mem_part(segment* seg);
+    void init(vertex_t vert_count, vertex_t pivot, cid_t color);
     int iteration_finalize();
-    inline bool vertex_active(vertex_t vert) { return (depth[vert] == level);};
+    index_t traverse_onepart(edge_t* part_edge, index_t cedge, part_t i, part_t j);
+    void algo_mem_part(segment* seg);
 };
+
 #endif

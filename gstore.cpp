@@ -47,7 +47,7 @@
 #include <fstream>
 #include <libaio.h>
 #include <math.h>
-
+#include <asm/mman.h>
 #include "wtime.h"
 #include "gstore.h"
 #include "pr.h"
@@ -55,6 +55,11 @@
 #include "bfs2.h"
 #include "kcore.h"
 #include "wcc.h"
+#include "traverse.h"
+#define AIO_MAXIO 16384 
+#define AIO_BATCHIO 256
+//These are IO threads
+#define IO_THDS 1
 
 index_t p = 0;
 index_t p_s = 0;
@@ -320,6 +325,14 @@ void grid::init(int argc, char * argv[])
             end = mywtime();
             cout << "WCC time = " << end-start << endl;
             break;
+    case 4:
+            start = mywtime();
+            read_aio_init(edgefile);
+            read_degree_in_mem(edgefile);
+            traverse();
+            end = mywtime();
+            cout << "Single color propagation time = " << end-start << endl;
+            break;
 	case 100:
 			analyze_grid_size(edgefile);
 			return;
@@ -414,7 +427,7 @@ void grid::pre_grid_big(string edgefile)
             vertex_t v0, v1, v2, v3;
             index_t offset;
             #pragma omp for schedule (dynamic, 4096) 
-            for (int64_t k = 0; k < ecount; ++k) {
+            for (index_t k = 0; k < ecount; ++k) {
                 edge = edges[k];
                 if (edge.is_self_loop()) continue;
                 v2 = edge.get_v0();
@@ -841,7 +854,6 @@ void grid::pre_grid(string edgefile, gedge_t* edges, index_t nedges)
         vertex_t v0, v1;
         vertex_t v2, v3;
         index_t offset = 0;
-        index_t index;
 		
 		#ifdef HALF_GRID
         matrix<spart_t, index_t> start_edge_half;
@@ -1364,8 +1376,12 @@ void grid::do_algo(algo_t* algo)
     cache->start_index = 0;
     
     cache->fetch_mem_part(last_read, seg1, read_part);
-    io->read_aio_random(seg1);
     
+    #pragma omp parallel num_threads(IO_THDS)
+    {
+        io->read_aio_random(seg1);
+        io->wait_aio_completion();
+    }
     last_read_t	  last_read1 = last_read; 
     last_read_t   last_read2 = last_read;
     
@@ -1386,7 +1402,7 @@ void grid::do_algo(algo_t* algo)
 
         #pragma omp parallel num_threads(NUM_THDS) //collapse(2)
         {
-            if (omp_get_thread_num() == 0) 
+            if (omp_get_thread_num() < IO_THDS) 
             {
                //End of iteration. Do nothing
                //Start of iteration. Do nothing
@@ -1396,20 +1412,20 @@ void grid::do_algo(algo_t* algo)
                 }
             }
 
-            if (omp_get_thread_num() == 1 && !iteration_start) {
+            if ((omp_get_thread_num() == IO_THDS) && !iteration_start) {
                 if (compressed == 1) {
                     cache_to_cache();
                     compressed = 2;
                 }
 	        }
             
-            if (omp_get_thread_num() == 2) {
+            if (omp_get_thread_num() == IO_THDS + 1) {
                 if (!is_end(last_read)) {
                     cache->fetch_mem_part(last_read2, seg3, read_part);
                 }
             }
         
-            if (3 == omp_get_thread_num()) {
+            if (2+IO_THDS == omp_get_thread_num()) {
                 if (is_end(last_read1)) { 
                     //Single threaded block for now.
                     cache->prep_pread_cached(seg2, 0);
@@ -1426,6 +1442,14 @@ void grid::do_algo(algo_t* algo)
             algo->algo_mem_part(seg1);
             if (iteration_start) {
                 algo->algo_mem_part(cached_pool1);
+            }
+
+            //wait for aio completion
+            if (omp_get_thread_num() < IO_THDS) 
+            {
+                if (!is_end(last_read1) && !iteration_start) {
+                    io->wait_aio_completion();
+                }
             }
         }
            
@@ -1490,8 +1514,11 @@ grid::bfs2()
 	index_t front_count = 0;
 	bool io_skip = 1;	
     cache->fetch_mem_part(last_read, seg1, read_part, io_skip);
-    io->read_aio_random(seg1);
-    
+    #pragma omp parallel num_threads(IO_THDS)
+    {
+        io->read_aio_random(seg1);
+        io->wait_aio_completion();
+    }
     last_read_t	  last_read1 = last_read; 
     last_read_t   last_read2 = last_read;
     bool iteration_start = false;
@@ -1510,7 +1537,7 @@ grid::bfs2()
 
         #pragma omp parallel num_threads(NUM_THDS) 
         {
-            #pragma omp master 
+            if (omp_get_thread_num() < IO_THDS) 
             {
                 if (!is_end(last_read1) && !iteration_start) {
                     //cache->fetch_mem_part(last_read, seg2, read_part, false);
@@ -1520,19 +1547,19 @@ grid::bfs2()
             }
 			if (compressed == 1 && !iteration_start) {
 				//pr.algo_mem_part2(cached_pool1);
-				if (omp_get_thread_num() == 1) {
+				if (omp_get_thread_num() == IO_THDS) {
                     cache_to_cache();
                     compressed = 2;
                 }
 			}
             
-            if (omp_get_thread_num() == 2) {
+            if (omp_get_thread_num() == IO_THDS+1) {
                 if (!is_end(last_read)) {
                     cache->fetch_mem_part(last_read2, seg3, read_part, io_skip);
                 }
             }
 
-            if (3 == omp_get_thread_num()) {
+            if (2+IO_THDS == omp_get_thread_num()) {
                 if (is_end(last_read1)) { 
                     cache->prep_pread_cached(seg2, 0);
                     cache->prep_pread_cached(seg1, seg2->ctx_count);
@@ -1550,9 +1577,17 @@ grid::bfs2()
 				pr.algo_mem_part(cached_pool1);
 			} 
 			//else  if (io_skip == 0 && compressed != 1) {
-			//	pr.algo_mem_part2(cached_pool1);
+				//pr.algo_mem_part2(cached_pool1);
 			//}
             //pr.algo_mem_part2(seg1);
+            
+            //Wait for aio
+            if (omp_get_thread_num() < IO_THDS) 
+            {
+                if (!is_end(last_read1) && !iteration_start) {
+                    io->wait_aio_completion();
+                }
+            }
         }
         
         if (iteration_start) { 
@@ -1603,8 +1638,7 @@ grid::bfs2()
     }
 }
 
-void 
-grid::wcc()
+void grid::do_algo_prop(algo_t& pr)
 {
     double start = mywtime();
     
@@ -1615,12 +1649,14 @@ grid::wcc()
     last_read.s_j   = p_p - 1;
     cache->start_index = 0;
 
-    wcc2_t pr;
-    pr.init(vert_count); 
     
     cache->fetch_mem_part(last_read, seg1, read_part, 1);
-    io->read_aio_random(seg1);
-    
+    #pragma omp parallel num_threads(IO_THDS)
+    {
+        io->read_aio_random(seg1);
+        io->wait_aio_completion();
+    }
+
     last_read_t	  last_read1 = last_read; 
     last_read_t   last_read2 = last_read;
     bool iteration_start = false;
@@ -1639,7 +1675,7 @@ grid::wcc()
 
         #pragma omp parallel num_threads(NUM_THDS) 
         {
-            #pragma omp master 
+            if (omp_get_thread_num() < IO_THDS) 
             {
                 if (!is_end(last_read1) && !iteration_start) {
                     //cache->fetch_mem_part(last_read, seg2, read_part, false);
@@ -1648,13 +1684,13 @@ grid::wcc()
                 
             }
             
-            if (omp_get_thread_num() == 2) {
+            if (omp_get_thread_num() == IO_THDS) {
                 if (!is_end(last_read)) {
                     cache->fetch_mem_part(last_read2, seg3, read_part, 1);
                 }
             }
 
-            if (3 == omp_get_thread_num()) {
+            if (IO_THDS+1 == omp_get_thread_num()) {
                 if (is_end(last_read1)) { 
                     cache->prep_pread_cached(seg2, 0);
                     cache->prep_pread_cached(seg1, seg2->ctx_count);
@@ -1667,10 +1703,22 @@ grid::wcc()
                 }
             }
             
-            pr.algo_mem_part(seg1);
 			if (iteration_start) {
 				pr.algo_mem_part(cached_pool1);
-			}
+				//pr.algo_mem_part(cached_pool1);
+			} else if (is_end(last_read1)) {
+				pr.algo_mem_part(cached_pool1);
+            }
+            pr.algo_mem_part(seg1);
+			//pr.algo_mem_part(cached_pool1);
+            //pr.algo_mem_part(seg1);
+            
+            if (omp_get_thread_num() < IO_THDS) 
+            {
+                if (!is_end(last_read1) && !iteration_start) {
+                    io->wait_aio_completion();
+                }
+            }
         }
         
         if (iteration_start) { 
@@ -1694,15 +1742,35 @@ grid::wcc()
             iteration_start = true;
             double end = mywtime();
             cout << "iteration time = " << end -start << endl;
-            if(pr.iteration_finalize()) break;
+            if(0 == pr.iteration_finalize()) break;
             cache->start_index = 0;
             start = mywtime();
-            cout << "post iteration time = " << start - end << endl;
+            //cout << "post iteration time = " << start - end << endl;
         } else {
 			new_swap_parts1();
             last_read1 = last_read;
 		}
     }
+}
+
+void 
+grid::wcc()
+{
+    //double start = mywtime();
+    wcc2_t pr;
+    pr.init(vert_count); 
+   
+    do_algo_prop(pr);
+}
+
+void grid::traverse()
+{
+    traverse_t pr;
+    vertex_t pivot = arg;
+    if (arg == -1) pivot = 1;
+    pr.init(vert_count, pivot, 0);
+
+    do_algo_prop(pr);
 }
 
 //step-back bypassed here. Used for measuring motivation.
@@ -1727,8 +1795,12 @@ grid::pagerank()
     pr.init(vert_count, iteration_count); 
     
     cache->fetch_mem_part(last_read, seg1, read_part, 1);
-    io->read_aio_random(seg1);
-    
+    #pragma omp parallel num_threads(IO_THDS)
+    {
+        io->read_aio_random(seg1);
+        io->wait_aio_completion();
+    }
+
     last_read_t	  last_read1 = last_read; 
     last_read_t   last_read2 = last_read;
     bool iteration_start = false;
@@ -1747,7 +1819,7 @@ grid::pagerank()
 
         #pragma omp parallel num_threads(NUM_THDS) //collapse(2)
         {
-            #pragma omp master 
+            if (omp_get_thread_num() < IO_THDS) 
             {
                 if (!is_end(last_read1) && !iteration_start) {
                     //cache->fetch_mem_part(last_read, seg2, read_part, false);
@@ -1756,13 +1828,13 @@ grid::pagerank()
                 
             }
             
-            if (omp_get_thread_num() == 2) {
+            if (omp_get_thread_num() == IO_THDS) {
                 if (!is_end(last_read)) {
                     cache->fetch_mem_part(last_read2, seg3, read_part, 1);
                 }
             }
 
-            if (3 == omp_get_thread_num()) {
+            if (1+IO_THDS == omp_get_thread_num()) {
                 if (is_end(last_read1)) { 
                     cache->prep_pread_cached(seg2, 0);
                     cache->prep_pread_cached(seg1, seg2->ctx_count);
@@ -1779,6 +1851,13 @@ grid::pagerank()
 			if (iteration_start) {
 				pr.algo_mem_part(cached_pool1);
 			}
+            
+            if (omp_get_thread_num() < IO_THDS) 
+            {
+                if (!is_end(last_read1) && !iteration_start) {
+                    io->wait_aio_completion();
+                }
+            }
         }
         
         if (iteration_start) { 
@@ -1884,10 +1963,14 @@ void grid::kcore(int kc)
     last_read.s_j   = p_p - 1;
     cache->start_index = 0;
     
-    int io_skip = 1;
+    int io_skip = 0;
     cache->fetch_mem_part(last_read, seg1, read_part, io_skip);
-    io->read_aio_random(seg1);
-    
+    #pragma omp parallel num_threads(IO_THDS)
+    {
+        io->read_aio_random(seg1);
+        io->wait_aio_completion();
+    }
+
     last_read_t	  last_read1 = last_read; 
     last_read_t   last_read2 = last_read;
     
@@ -1907,7 +1990,7 @@ void grid::kcore(int kc)
 
         #pragma omp parallel num_threads(NUM_THDS) //collapse(2)
         {
-            if (omp_get_thread_num() == 0) 
+            if (omp_get_thread_num() < IO_THDS) 
             {
                //End of iteration. Do nothing
                //Start of iteration. Do nothing
@@ -1917,20 +2000,20 @@ void grid::kcore(int kc)
                 }
             }
 
-            if (omp_get_thread_num() == 1 && !iteration_start) {
+            if (omp_get_thread_num() == IO_THDS && !iteration_start) {
                 if (compressed == 1) {
                     cache_to_cache();
                     compressed = 2;
                 }
 	        }
             
-            if (omp_get_thread_num() == 2) {
+            if (omp_get_thread_num() == IO_THDS + 1) {
                 if (!is_end(last_read)) {
                     cache->fetch_mem_part(last_read2, seg3, read_part, io_skip);
                 }
             }
         
-            if (3 == omp_get_thread_num()) {
+            if (2+IO_THDS == omp_get_thread_num()) {
                 if (is_end(last_read1)) { 
                     //Single threaded block for now.
                     cache->prep_pread_cached(seg2, 0);
@@ -1947,6 +2030,13 @@ void grid::kcore(int kc)
             algo->algo_mem_part(seg1);
             if (iteration_start) {
                 algo->algo_mem_part(cached_pool1);
+            }
+
+            if (omp_get_thread_num() < IO_THDS) 
+            {
+                if (!is_end(last_read1) && !iteration_start) {
+                    io->wait_aio_completion();
+                }
             }
         }
            
@@ -1978,10 +2068,10 @@ void grid::kcore(int kc)
             start = mywtime();
             index_t front_count = algo->iteration_finalize();
 			if(0 == front_count) break;
-			else if (front_count <= 16*p) {
-			   	io_skip = 0;
+			//else if (front_count <= 16*p) {
+			   	//io_skip = 0;
 				//cout << "io_skip = " << (int)io_skip << endl;
-			}
+			//}
 
             //cout << "size copied = " << sz_copied << endl;
             sz_copied = 0;
@@ -2439,7 +2529,12 @@ void grid::read_degree_in_mem(string edgefile)
     file = edgefile + ".degree";
     f_degree = fopen(file.c_str(), "rb");
     assert(f_degree != 0);
-    vert_degree = (degree_t*) calloc(sizeof(degree_t), vert_count);
+    vert_degree = (degree_t*)mmap(NULL, sizeof(degree_t)*vert_count, 
+                           PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0 , 0);
+    if (vert_degree == MAP_FAILED) {
+        vert_degree = (degree_t*) calloc(sizeof(degree_t), vert_count);
+    }
     fread(vert_degree, sizeof(degree_t), vert_count, f_degree);
     fclose(f_degree);
 
@@ -2506,14 +2601,22 @@ int grid::read_aio_init(string edgefile)
     seg3 = (segment*)malloc(sizeof(segment));
    
     //Allocate aligned memory 
-    
-    if(posix_memalign((void**)&init_buf,2097152 , (total_size))) {
+   
+    init_buf = (char*)mmap(NULL, total_size, PROT_READ|PROT_WRITE, 
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 
+                           0 , 0);
+
+    if (MAP_FAILED == init_buf) {
+        if(posix_memalign((void**)&init_buf,2097152 , (total_size))) {
 			perror("posix_memalign");
 			return -1;
+        }
     }
+
     if (mlock(init_buf, total_size) < 0) {
         handle_error("mlock Failed");
-    } 
+    }
+
     seg1->ctx_count = 0;
     seg2->ctx_count = 0;
     seg3->ctx_count = 0;
@@ -2547,6 +2650,13 @@ int grid::read_aio_init(string edgefile)
 
 
 //This can be done now multi-threaded with some changes.
+/*
+ * @to_read:     Memory Size of the segment
+ * @start_addr:  offset in the memory segement.
+ * @part_meta:   Partition/tile metadata for one tile.
+ * @last_read:   Start reading from this partition.
+ *
+ */
 int cache_driver::prep_read_aio_seq(const last_read_t& last_read, size_t to_read, 
                   part_meta_t* part_meta, 
 		  int& iteration_done, size_t& start_addr)
@@ -3039,13 +3149,23 @@ cache_driver::prep_read_aio_col(const last_read_t& last_read, part_t i,
     return 0;
 }
 
+
 io_driver::io_driver()
 {
-    ctx_count1 = 1024*1024;
-    events = new struct io_event [ctx_count1];
-    cb_list = new struct iocb*[ctx_count1];
-	for(index_t i = 0; i < ctx_count1; ++i) {	
-        cb_list[i] = new struct iocb;
+    aio_meta = new aio_meta_t [IO_THDS];
+    
+    for (int j = 0; j < IO_THDS; ++j) {
+        aio_meta[j].events = new struct io_event [AIO_MAXIO];
+        aio_meta[j].cb_list = new struct iocb*[AIO_MAXIO];
+        for(index_t i = 0; i < AIO_MAXIO; ++i) {	
+            aio_meta[j].cb_list[i] = new struct iocb;
+        }
+        if(io_setup(AIO_MAXIO, &aio_meta[j].ctx) < 0) {
+            cout << AIO_MAXIO << endl;
+            perror("io_setup");
+            assert(0);
+        }
+        aio_meta[j].busy = 0;
     }
 }
 
@@ -3053,34 +3173,27 @@ size_t io_driver::read_aio_random(segment* seg)
 {
     index_t ctx_count = seg->ctx_count;
     if (0 == ctx_count) return 0;
-    if (seg->buf == 0) {
-        seg->buf = main_buf;
+    
+    char** pbuf = &seg->buf;
+
+    if (__sync_bool_compare_and_swap(pbuf, 0, main_buf))
+    {
+        //seg->buf = main_buf;
         main_buf += memory;
         assert(main_buf <= init_buf + total_size);
     }
-    assert(ctx_count);
 /*
 	cout << seg->meta[0].start << " ";
 	cout << seg->meta[ctx_count - 1].end << " ";
 	cout << ctx_count << endl;
 */  
     //double start = mywtime();
-    //struct io_event* events = new struct io_event [ctx_count];
-    io_context_t     ctx = 0;
-
-    if(io_setup(ctx_count, &ctx) < 0) {
-		cout << ctx_count << endl;
-        perror("io_setup");
-        assert(0);
-		return 0;
-    }
-	
-    //struct iocb **cb_list = new struct iocb*[ctx_count];
     
     size_t  start_address = 0;
     size_t  sz_to_read = 0;
     size_t disk_offset = 0; 
-	
+    int ret = 0;
+    
     #ifdef HALF_GRID
     matrix<spart_t, index_t> start_edge_half;
 	start_edge_half.part_count = p_p;
@@ -3094,8 +3207,21 @@ size_t io_driver::read_aio_random(segment* seg)
 	spart_t s_j;
 	spart_t s_i_end;
 	spart_t s_j_end;
+  
+    int tid          = omp_get_thread_num();
+    vertex_t per_thd_work = ctx_count/IO_THDS;
+    vertex_t my_beg       = tid * per_thd_work;
+    vertex_t my_end       = (tid + 1) * per_thd_work;
+    if (tid == IO_THDS - 1 ) my_end= ctx_count;
+    
+    index_t k1= 0;
+    index_t k = 0;
+    
+    //cout << omp_get_thread_num() << endl;
 
-    for (index_t k = 0; k < seg->ctx_count; ++k) {
+    //for (index_t k = 0; k < ctx_count; ++k) 
+    for (k = my_beg; k < my_end; ++k) 
+    {
 		get_ij(seg->meta[k].start, b_i, b_j, s_i, s_j);
 		get_s_ij(seg->meta[k].end, s_i_end, s_j_end);
 
@@ -3114,11 +3240,11 @@ size_t io_driver::read_aio_random(segment* seg)
 		start_edge->val = g->_s_start_edge + beg_edge_offset2(b_i, b_j);
 		#endif
 
-		//cb_list[k] = new struct iocb;
 		disk_offset = ((start_edge->get(s_i, s_j) << bytes_in_edge_shift) 
 					   & ALIGN_MASK);
 			
-		//start_address = part_meta[k].offset;
+		//XXX
+        start_address = seg->meta[k].offset;
 			
 		sz_to_read  = (start_edge->get_end(s_i_end, s_j_end) 
 						   << bytes_in_edge_shift)  
@@ -3129,38 +3255,73 @@ size_t io_driver::read_aio_random(segment* seg)
 
 		//cout << "sz_to_read" << sz_to_read << endl;
 				
-		io_prep_pread(cb_list[k], 
+		io_prep_pread(aio_meta[tid].cb_list[k1++], 
 						  f_edge, 
 						  (char*)seg->buf + start_address, 
 						  sz_to_read, 
 						  disk_offset);
 			
-		start_address += sz_to_read;
+		//start_address += sz_to_read;
+        
+        if (0 == ((k1) % AIO_BATCHIO)) {
+            ret = io_submit(aio_meta[tid].ctx, AIO_BATCHIO, 
+                            aio_meta[tid].cb_list+ k1  - AIO_BATCHIO);
+            
+            if (ret != AIO_BATCHIO) {
+                cout << ret  << endl;
+                perror("io_submit");
+                assert(0);
+            }
+            aio_meta[tid].busy += AIO_BATCHIO;
+        }
+
+        if (aio_meta[tid].busy == AIO_MAXIO) {
+            ret = io_getevents(aio_meta[tid].ctx, AIO_BATCHIO, 
+                               AIO_BATCHIO, aio_meta[tid].events, 0);
+
+            if (ret != AIO_BATCHIO) {
+                cout << ctx_count << " " << ret << endl;
+                perror(" io_getevents");
+                assert(0);
+            }
+            aio_meta[tid].busy -= AIO_BATCHIO;
+            k1 = 0;
+        }
+    }
+    int rem_aio = (k1 % AIO_BATCHIO);
+    if (rem_aio)
+    {
+        ret = io_submit(aio_meta[tid].ctx, rem_aio, 
+                        aio_meta[tid].cb_list + k1 - rem_aio);
+        
+        if (ret != rem_aio) {
+            cout << ret <<" "  << rem_aio << endl;
+            perror("io_submit");
+            assert(0);
+        }
+        aio_meta[tid].busy += rem_aio;
     }
 
     //double end = mywtime();
-    //cout << " " << start_address << endl;
-    
-    int ret = io_submit(ctx, ctx_count, cb_list);
-    if (ret != ctx_count)
-    {
-        cout << ret << endl;
-        perror("io_submit");
-        assert(0);
-        return 0;
-    }
-    
-    ret = io_getevents(ctx, ctx_count, ctx_count, events, 0);
-    if (ret != ctx_count) {
-        cout << ctx_count << " " << ret << endl;
-        perror(" io_getevents");
-    }
-    
     //assert(events[0].obj == cb_list[0]);
-    
-    io_destroy(ctx);
-    //delete [] events;
-    //delete [] cb_list;
+    return 0;
+}
+
+int io_driver::wait_aio_completion()
+{
+    uint32_t tid = omp_get_thread_num();
+    int ret = 0;
+    if (aio_meta[tid].busy) {
+        ret = io_getevents(aio_meta[tid].ctx, aio_meta[tid].busy, 
+                           aio_meta[tid].busy, aio_meta[tid].events, 0);
+
+        if (ret != aio_meta[tid].busy) {
+            cout << aio_meta[tid].busy << " " << ret << endl;
+            perror(" io_getevents");
+        }
+    }
+
+    aio_meta[tid].busy = 0;
     return 0;
 }
 
@@ -3282,12 +3443,6 @@ size_t cache_driver::fetch_mem_part(last_read_t& last_read, segment* seg,
 		}
     } 
     //double end = mywtime();
-    //cout <<"pre-read time ="  << end - start << endl; 
-    //cout << last_read.b_i << " " << last_read.b_j << " " << last_read.s_i << " " << last_read.s_j << endl;
-    
-    //io->read_aio_random(seg);
-    //start = mywtime();
-    //cout << "read time = " << start - end << endl;
     return sz_to_read;
 }
 

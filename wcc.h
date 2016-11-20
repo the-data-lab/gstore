@@ -33,8 +33,7 @@
 #ifndef _WCC2_H_
 #define _WCC2_H_
 
-#include "gstore.h"
-
+#include "algo.h"
 extern grid* g;
 
 typedef uint32_t cid_t;
@@ -69,7 +68,7 @@ vector<cid_t> sort_indexes(const cid_t* v)
       return idx;
 }
 */
-class wcc2_t {
+class wcc2_t : public algo_t{
 public:
     cid_t		wcc_group;
     vertex_t    vert_count;

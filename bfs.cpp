@@ -45,7 +45,7 @@
 #include <cmath>
 #include <fstream>
 #include <algorithm>
-
+#include <asm/mman.h>
 #include "wtime.h"
 #include "bfs.h"
 
@@ -53,13 +53,20 @@ extern grid* g;
 
 const depth_t INFTY = 0;
 
-void bfs_t::init(vertex_t vert_count, vertex_t a_root, bitmap_t* a_read_part)
+void bfs_t::init(vertex_t vert_count, vertex_t root, bitmap_t* a_read_part)
 {
     read_part = a_read_part;
-    root = a_root;
-    depth = (depth_t*)calloc(sizeof(depth_t), vert_count);
-    memset(depth, INFTY, sizeof(depth_t)*vert_count);
-
+    memset(front_count, 0, sizeof(vertex_t)* NUM_THDS);
+    
+    depth = (depth_t*)mmap(NULL, sizeof(depth_t)*vert_count, 
+                           PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0 , 0);
+    
+    if (MAP_FAILED == depth) {
+        depth = (depth_t*)calloc(sizeof(depth_t), vert_count);
+        memset(depth, INFTY, sizeof(depth_t)*vert_count);
+    }
+    
     depth[root] = 1;
     level = 1;
     cout << "Root = " << root << endl; 
@@ -234,7 +241,8 @@ void bfs_t::algo_mem_part(segment* seg)
 	    
     part_meta_t* meta = seg->meta;
 	index_t ctx_count = seg->ctx_count;
-    
+	    
+    #pragma omp for schedule (dynamic, 1) nowait 
     for (index_t l = 0; l < ctx_count; ++l) {
         get_ij(meta[l].start, big_i, big_j, i, j);
         get_s_ij(meta[l].end, i_end, j_end);
@@ -270,7 +278,7 @@ void bfs_t::algo_mem_part(segment* seg)
 	    part_t j2 = j;
 	    part_t j_end1 = p_p - 1;
 
-	    #pragma omp for schedule (dynamic, 1) nowait 
+	    //#pragma omp for schedule (dynamic, 1) nowait 
 		for (part_t i1 = i; i1 <= i_end; ++i1) {
             j2 = 0;
 		    if (i1 == i_end) j_end1 = j_end; 
@@ -329,67 +337,3 @@ void algo_t::calc_part_needed()
     }
 }
 
-#ifdef VERIFY_BFS
-index_t bfs_t::verify()
-{
-    bitmap_t* seen_edge = new bitmap_t(g->vert_count);
-    #pragma omp parallel num_threads(NUM_THDS)
-    {
-	#pragma omp for schedule (dynamic, 1)// nowait//faster 
-	for (part_t i = 0; i < p; ++i) {
-	    #ifdef HALF_GRID 
-	    for (part_t j = i; j < p; ++j)
-	    #else 
-	    for (part_t j = 0; j < p; ++j)
-	    #endif
-	    {
-		#ifdef COMPACT_GRID
-		vertex_t offset0 = (i << bits_in_block_shift);
-		vertex_t offset1 = (j << bits_in_block_shift);
-		#endif
-		edge_t* part_edge = g->_edges + g->edge_start.get(i, j);
-		index_t cedge = g->edge_start.get_count(i, j);
-		for (uint64_t k = 0 ; k < cedge; ++k) {
-		    #ifdef COMPACT_GRID
-		    vertex_t v0 = offset0 + part_edge[k].v0;
-		    vertex_t v1 = offset1 + part_edge[k].v1;
-		    #else 
-		    vertex_t v0 = part_edge[k].v0;
-		    vertex_t v1 = part_edge[k].v1;
-		    #endif
-		    if (v0 != v1) {
-			if (parent[v0] == v1) {
-			    seen_edge->set_bit_atomic(v0);
-			}
-			if (parent[v1] == v0) {
-			    seen_edge->set_bit_atomic(v1);
-			}
-			depth_t lvldiff = depth[v0] - depth[v1];
-			if (!((lvldiff == 1) || (lvldiff == 255) || (lvldiff == 0))) {
-			    cout << (index_t)lvldiff << endl;
-			    cout << "bfs verification failed" << endl;
-			    exit(-1);
-			}
-		    }
-		}
-	    }
-	}
-	#pragma omp barrier
-	if (omp_get_thread_num() == 0) {
-	    cout << "verifying next phase" << endl;
-	}
-	vertex_t vert_count = g->vert_count;
-	#pragma omp for
-	for (vertex_t k = 0; k < vert_count; ++k) {
-	    if (k != root) {
-	    	if (parent[k] != vertex_t(-1) && !seen_edge->get_bit(k)) {
-		    cout << "bfs verification failed" << endl;
-		    exit(-1);
-		}
-	    }
-	}
-	
-    }
-    return 0;
-}
-#endif

@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <asm/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <assert.h>
@@ -83,8 +84,24 @@ pr_t::init(vertex_t a_vert_count, int a_iteration_count)
 {
     vert_count = a_vert_count;
     iteration_count = a_iteration_count;
-    vert_rank = (rank_t*)calloc(sizeof(rank_t), vert_count);
-    vert_rank_prior = (rank_t*)calloc(sizeof(rank_t), vert_count);
+    
+    vert_rank = (rank_t*)mmap(NULL, sizeof(rank_t)*vert_count, 
+                           PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0 , 0);
+    if (MAP_FAILED == vert_rank) {
+        vert_rank = (rank_t*)calloc(sizeof(rank_t), vert_count);
+        vert_rank_prior = (rank_t*)calloc(sizeof(rank_t), vert_count);
+    } else {
+    
+        vert_rank_prior = (rank_t*)mmap(NULL, sizeof(rank_t)*vert_count, 
+                           PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0 , 0);
+    
+        if (MAP_FAILED == vert_rank_prior) {
+            vert_rank_prior = (rank_t*)calloc(sizeof(rank_t), vert_count);
+        }
+    }
+    
     double inv_vert_count = 1.0/vert_count;
 
     #pragma omp parallel for num_threads (NUM_THDS) schedule(dynamic, 1024)
@@ -152,7 +169,8 @@ void pr_t::algo_mem_part(segment* seg)
 	    
     part_meta_t* meta = seg->meta;
 	index_t ctx_count = seg->ctx_count;
-    
+	    
+    //#pragma omp for schedule (dynamic, 1) nowait 
     for (index_t l = 0; l < ctx_count; ++l) {
         get_ij(meta[l].start, big_i, big_j, i, j);
         get_s_ij(meta[l].end, i_end, j_end);
