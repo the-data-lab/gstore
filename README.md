@@ -21,9 +21,9 @@ We will be updating this file as and when required and will serve as help file.
 
 It will generate some files named tile_25_16b.dat.start, tile_25_16b.dat.grid etc.
 
-* Running page rank: To run 5 iteration of pagerank job on scale 25 kronecker graph run following command.
+* `Running page rank`: To run 5 iteration of pagerank job on scale 25 kronecker graph run following command.
 
-`./gstoreu -s 25 -i tile_25_16b.dat -j 1 -a5` 
+    `./gstoreu -s 25 -i tile_25_16b.dat -j 1 -a5` 
 
 Please see gstore.cpp main() function for meaning of different parameter such as i, j, o, c, a etc.
 
