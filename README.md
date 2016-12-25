@@ -7,7 +7,23 @@ We will be updating this file as and when required and will serve as help file.
 ### Building:
   `make gstored` and `make gstoreu` or `make all`
   
-`gstored` is for directed graphs. `gstoreu` is for undirected graphs.
+`gstored` is for directed graphs. `gstoreu` is for undirected graphs. 
+`libaio` is required before you build the software.
+
+### How to run
+`gstore` has proposed a new storage format called *tile based represenation* which takes advantage of *symmetry* and *smallest number of bits (SNB)* format. So, a graph need to be converted in that format before you can run.  
+
+* Graph generation: We have modified Graph500 generator little bit and have added the source code to generate a kronecker graph. Go insider `graph500-generator` directory and run `make`. You need `mpi` to be installed. Thereafter run './generator_test_mpi 25 16 1 1' (single-threaded) or  `mpirun ./generator_test_mpi 16 16 1 1` (multi-process) to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). If you run multi-process one, than you need to concatenate all the generated files in one file. At the end you will get a binary edge-list file. Lets call the above generated file as *kron_25_16b.dat*
+
+* Graph conversion: Run following command to convert the *kron_25_16b.dat* in *tile based representation*:
+  `./gstoreu -s 25 -i kron_25_16b.dat -c 1 -o tile_25_16b.dat`
+  It will generate some files name tile_25_16b.dat.start tile_25_16b.dat.grid etc.
+
+* Running page rank: To run 5 iteration of pagerank job on scale 25 kronecker graph run following command.
+`./gstoreu -s 25 -i tile_25_16b.dat -j 1 -a5` 
+
+Please see gstore.cpp main() function for meaning of different parameter such as i, j, o, c, a etc.
+
 
 ### Things to tune:
 #### gstore.h
@@ -28,8 +44,3 @@ The above two variables decide the IO depth and IO batching crietria. AIO_BATCHI
   
 There are plently of other settings for IO optimizations such as number of request containers in old block-layer (The new block-layer is called blk-mq). Also the thread completion affinity for IO completions and many more.
   
-### How to run
-
-`sudo ./gstoreu -s 25 -i /mnt/pradeepk/grid_25_16b.dat -j 1 -a5` to run 5 iteration of pagerank job on scale 25 kronecker graph.
-
-Please see gstore.cpp main() function for meaning of different parameter such as i, j, o, c, a etc.
