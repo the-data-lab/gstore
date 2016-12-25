@@ -13,13 +13,16 @@ We will be updating this file as and when required and will serve as help file.
 ### How to run
 `gstore` has proposed a new storage format called *tile based represenation* which takes advantage of *symmetry* and *smallest number of bits (SNB)* format. So, a graph need to be converted in that format before you can run.  
 
-* Graph generation: We have modified Graph500 generator little bit and have added the source code to generate a kronecker graph. Go insider `graph500-generator` directory and run `make`. You need `mpi` to be installed. Thereafter run './generator_test_mpi 25 16 1 1' (single-threaded) or  `mpirun ./generator_test_mpi 16 16 1 1` (multi-process) to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). If you run multi-process one, than you need to concatenate all the generated files in one file. At the end you will get a binary edge-list file. Lets call the above generated file as *kron_25_16b.dat*
+* `Graph generation`: We have modified Graph500 generator little bit and have added the source code to generate a kronecker graph. Go inside `graph500-generator` directory and run `make`. You need `mpi` to be installed. Thereafter run `./generator_test_mpi 25 16 1 1` (single-threaded) or  `mpirun ./generator_test_mpi 16 16 1 1` (multi-process) to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). If you run multi-process one, than you need to concatenate all the generated files in one file. At the end you will get a binary edge-list file. Lets call the above generated file as *kron_25_16b.dat*
 
-* Graph conversion: Run following command to convert the *kron_25_16b.dat* in *tile based representation*:
-  `./gstoreu -s 25 -i kron_25_16b.dat -c 1 -o tile_25_16b.dat`
-  It will generate some files name tile_25_16b.dat.start tile_25_16b.dat.grid etc.
+* `Graph conversion`: Run following command to convert the *kron_25_16b.dat* to *tile based representation*:
+
+`./gstoreu -s 25 -i kron_25_16b.dat -c 1 -o tile_25_16b.dat`
+
+It will generate some files named tile_25_16b.dat.start, tile_25_16b.dat.grid etc.
 
 * Running page rank: To run 5 iteration of pagerank job on scale 25 kronecker graph run following command.
+
 `./gstoreu -s 25 -i tile_25_16b.dat -j 1 -a5` 
 
 Please see gstore.cpp main() function for meaning of different parameter such as i, j, o, c, a etc.
@@ -36,6 +39,7 @@ Please see gstore.cpp main() function for meaning of different parameter such as
 *  `IO_THDS`: Number of IO threads to deploy for doing IO. Ideally, you should have just one thread for one SSD but more threads for multiple SSD raid. Feel free to experiment with it.
 * `AIO_MAXIO` 16384 
 * `AIO_BATCHIO` 256
+
 The above two variables decide the IO depth and IO batching crietria. AIO_BATCHIO count IO will be submitted in each system call of libaio. And the IO will behave as asynchronous till the count of submitted IO (through multiple submission call) reaches beyond AIO_MAXIO.  After that, we start reaping the IO and sending thus maintaining the IO depth. Set it to smaller number if you have fewer SSDs. Such as 16 or 32 batching criteria per-SSD.
     
 #### Other tunables:
