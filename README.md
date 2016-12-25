@@ -1,13 +1,16 @@
 # gstore
-Semi-external graph engine for trillion-edge graphs.
+*Semi-external graph engine for trillion-edge graphs.*
 
-==========Help file==========
+## Help
 We will be updating this file as and when required. 
 
-Building:
+### Building:
   make gstored
+  
   make gstoreu
+    
     or
+  
   make all
   
 gstored is for directed graphs.
