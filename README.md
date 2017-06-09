@@ -16,22 +16,23 @@ We will be updating this file as and when required and will serve as help file.
 * `Graph generation`: We have modified Graph500 generator little bit and have added the source code to generate a kronecker graph. Go inside `graph500-generator` directory and run 
   `make`. 
     You need `mpi` to be installed. Thereafter run 
-   `./generator_test_mpi 25 16 1 1` (single-threaded) or  
-   `mpirun ./generator_test_mpi 16 16 1 1` (multi-process) 
+   `./generator_test_mpi 25 16 1 1` (single-threaded, single file generated) or  
+   `mpirun -np 16./generator_test_mpi 25 16 1 1` (16 process, 16 files) 
    
-   to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). If you run multi-process one, than you need to concatenate all the generated files in one file. At the end you will get a binary edge-list file. Lets call the above generated file as *kron_25_16b.dat*. Kindly, note that this generator is not efficient and will take forever to generate a trillion edge graph.
+   to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). If you run multi-process one, than you need to concatenate all the generated files in one file (use cat filename > singlefile). At the end you will get a binary edge-list file. Lets call the above generated file as *kron_25_16b.dat*. Its approximate size is 4GB. Kindly, note that this generator is not efficient and will take forever to generate a trillion edge graph. We have one more generator, and would love to share it with you. Let me know.
 
 * `Graph conversion`: Run following command to convert the *kron_25_16b.dat* to *tile based representation*:
 
   `./gstoreu -s 25 -i kron_25_16b.dat -c 1 -o tile_25_16b.dat`
 
-  It will generate some files named tile_25_16b.dat.start, tile_25_16b.dat.grid etc.
+  It will generate some files named tile_25_16b.dat.start, tile_25_16b.dat.grid etc. Graph convesion runs completely in-memory. So, for above conversion to be successful, you need more than 8 GB of memory. In case of you don't have that much memory, generate and convert a smaller sized graph. E.g. use 8 in place of 16 in the above two commands. It will generate a graph file of size 2GB. Also, we do have few option provided in the G-Store to convert bigger file to G-Store format. I will write help on that later. Let me know, if you need immediate help on this.
 
 * `Running page rank`: To run 5 iteration of pagerank job on scale 25 kronecker graph run following command.
 
     `./gstoreu -s 25 -i tile_25_16b.dat -j 1 -a5` 
 
 Please see gstore.cpp main() function for meaning of different parameter such as i, j, o, c, a etc. Changing j value to 0, 1, 2, 3 will allow you to run bfs, pagerank, wcc and kcore.
+
 
 
 ### Things to tune:
@@ -54,3 +55,7 @@ The above two variables decide the IO depth and IO batching crietria. AIO_BATCHI
   
 There are plently of other settings for IO optimizations such as number of request containers in old block-layer (The new block-layer is called blk-mq). Also the thread completion affinity for IO completions and many more.
   
+### Running on other graph files.
+Any graph need to be converted to G-Store format to run is successfully. For the time being, the conversion runs only from a binary graph file to G-Store format. The binary graph file is just a flat binary file containing edge tuple in <v0 v1> format. The size is 4 byte or each vertex. You need to change few hash defines to change this size. So, if you want to convert a graph file where vertex id is 6 or 8 bytes, G-Store can do it. Help will be written later.
+
+However, many real-world graph that we donwload from internet are in ascii format. They must be converted to binary format before G-Store can convert that to G-Store format. We do have utility function to convert the ascii to binary file. Help will be written later. 
