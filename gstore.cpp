@@ -180,7 +180,7 @@ void grid::init(int argc, char * argv[])
                 arg = atoi(optarg);
                 break;
             default:
-               assert(0); 
+               cout << "Unknown argument" << endl ; 
         }
     }
 
@@ -337,7 +337,7 @@ void grid::init(int argc, char * argv[])
 			analyze_grid_size(edgefile);
 			return;
     default:
-            assert(0);
+            cout << "Wrong value for -j argument" << endl;
     }
 }
 
@@ -3157,6 +3157,7 @@ io_driver::io_driver()
     for (int j = 0; j < IO_THDS; ++j) {
         aio_meta[j].events = new struct io_event [AIO_MAXIO];
         aio_meta[j].cb_list = new struct iocb*[AIO_MAXIO];
+        aio_meta[j].ctx = 0;
         for(index_t i = 0; i < AIO_MAXIO; ++i) {	
             aio_meta[j].cb_list[i] = new struct iocb;
         }
