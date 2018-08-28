@@ -13,13 +13,13 @@ We will be updating this file as and when required and will serve as help file.
 ### How to run
 `gstore` has proposed a new storage format called *tile based represenation* which takes advantage of *symmetry* and *smallest number of bits (SNB)* format. So, a graph need to be converted in that format before you can run.  
 
-* `Graph generation`: We have modified Graph500 generator little bit and have added the source code to generate a kronecker graph. Go inside `graph500-generator` directory and run 
+* `Graph generation and Conversion`: We have modified Graph500 generator little bit and have added the source code to generate a kronecker graph. Go inside `graph500-generator` directory and run 
   `make`. 
     You need `mpi` to be installed. Thereafter run 
    `./generator_test_mpi 25 16 1 1` (single-threaded, single file generated) or  
    `mpirun -np 16 ./generator_test_mpi 25 16 1 1` (16 process, 16 files) 
    
-   to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). If you run multi-process one, than you need to concatenate all the generated files in one file (use cat filename >> singlefile). At the end you will get a binary edge-list file. Lets call the above generated file as *kron_25_16b.dat*. Its approximate size is 4GB. Kindly, note that this generator is not efficient and will take forever to generate a trillion edge graph. We have one more generator, and would love to share it with you. Let me know.
+   to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). If you run multi-process one, than you need to concatenate all the generated files in one file (use cat filename >> singlefile). At the end you will get a binary edge-list file. Lets call the above generated file as *kron_25_16b.dat*. Its approximate size is 4GB. Kindly, note that this generator is not efficient and will take forever to generate a trillion edge graph. We have one more generator, and plenty of other conversion functions such as text to binary etc, and is shared in https://github.com/pradeep-k/gConv. Use that for bigger graph generation (or even smaller if you want). Let me know, if you need any further help.
 
 * `Graph conversion`: Run following command to convert the *kron_25_16b.dat* to *tile based representation*:
 
@@ -31,7 +31,7 @@ We will be updating this file as and when required and will serve as help file.
 
     `./gstoreu -s 25 -i tile_25_16b.dat -j 1 -a5` 
 
-Please see gstore.cpp main() function for meaning of different parameter such as i, j, o, c, a etc. Changing j value to 0, 1, 2, 3 will allow you to run bfs, pagerank, wcc and kcore.
+Please see gstore.cpp main() function for meaning of different parameter such as i, j, o, c, a etc. Changing j value to 0, 1, 2, 3 will allow you to run bfs, pagerank, wcc and kcore. Change a (meaning argument) to set either number of iterations for pagerank, or root vertex for bfs, or value of k for kcore, etc.
 
 
 
