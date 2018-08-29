@@ -69,7 +69,7 @@ extern index_t p;
 #define COMPACT_GRID
 //#define HALF_GRID
 
-#define NUM_THDS 56 
+#define NUM_THDS 32 
 #define bytes_in_edge_shift 2 
 
 
@@ -588,13 +588,23 @@ public:
     grid();
     ~grid();
 
+    //In-memory conversions
     void pre_grid(string edgefile, gedge_t* edges, index_t nedges);
     void proc_grid(string edgefile, string part_file);
     
-    void pre_grid_big(string edgefile);
-    void proc_grid_big(string edgefile, string part_file);
+    //Out-of-core conversion for converting big files/dir to G-Store format
+    void proc_grid_big(string edgefile, string part_file, bool is_odir);
     
+    //They generate intermediate files
+    void pre_grid_file(string edgefile);
     void pre_grid_dir(string idir);
+
+    //It reads the intermediate files to generate final one giant files
+    void post_grid_file(string edgefile, string part_file, bool is_dir);
+    //It reads the intermediate files to generate many small files
+    void post_grid_dir(string edgefile, string part_file, bool is_dir);
+
+    
 	
 	void pre_csr(string edgefile, gedge_t* edges, index_t nedges);
     void proc_csr(string edgefile, string part_file);
