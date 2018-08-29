@@ -59,8 +59,12 @@ typedef uint64_t vertex_t;
 typedef uint16_t word_t;
 typedef uint64_t part_id;
 
-extern index_t p;
+
+//tile count in 1 dimension
 extern index_t p_s;
+
+//physical group count in 1 dimension
+extern index_t p;
 
 #define COMPACT_GRID
 //#define HALF_GRID
@@ -68,21 +72,27 @@ extern index_t p_s;
 #define NUM_THDS 56 
 #define bytes_in_edge_shift 2 
 
+
+//For tile count in the graph
 #define bit_shift2 16
 #define part_mask2 (-1UL << bit_shift2)
 #define part_mask2_2 ~(part_mask2)
 
-#define bit_shift0 26
+//For conversion XXX
+#define bit_shift0 25
 #define part_mask0 (-1UL << bit_shift0)
 #define part_mask0_2 ~(part_mask0)
 
 //--------******* ----------//
+
+//For tiles in a physical group
 #define p_p 256 
 #define bit_shift3 8 
 #define part_mask3 (-1UL << bit_shift3)
 #define part_mask3_2 ~(part_mask3)
 
-//bit_shift2+bit_shift3
+//For physical group count in the graph
+//bit_shift3+bit_shift3
 #define bit_shift1 24 
 #define part_mask1 (-1UL << bit_shift1)
 #define part_mask1_2 ~(part_mask1) 
@@ -577,11 +587,14 @@ class grid {
 public:
     grid();
     ~grid();
+
     void pre_grid(string edgefile, gedge_t* edges, index_t nedges);
     void proc_grid(string edgefile, string part_file);
     
     void pre_grid_big(string edgefile);
     void proc_grid_big(string edgefile, string part_file);
+    
+    void pre_grid_dir(string idir);
 	
 	void pre_csr(string edgefile, gedge_t* edges, index_t nedges);
     void proc_csr(string edgefile, string part_file);

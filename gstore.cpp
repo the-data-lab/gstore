@@ -48,6 +48,7 @@
 #include <libaio.h>
 #include <math.h>
 #include <asm/mman.h>
+#include <dirent.h>
 #include "wtime.h"
 #include "gstore.h"
 #include "pr.h"
@@ -184,8 +185,8 @@ void grid::init(int argc, char * argv[])
         }
     }
 
-    cout << "Partition Count = " << p << endl;
-    cout << "Partition Count smaller = " << p_s << endl;
+    cout << "Total Physcial Group Count (in One Direction) = " << p << endl;
+    cout << "Total Tiles Count (in One Direction) = " << p_s << endl;
     double start, end;
   
     switch(c) {
@@ -341,14 +342,191 @@ void grid::init(int argc, char * argv[])
     }
 }
 
+
+void grid::pre_grid_dir(string idir)
+{
+    string edgefile;
+    //Number of files in one row.
+    index_t p_v = (vert_count >> bit_shift0);
+
+    //Total number of files.
+    index_t vcount = calc_total_part(p_v);
+    cout << "Creating " << vcount << " intermediate file, p_v =" << p_v << endl;
+    
+    string* tfile = new string [vcount];
+    FILE** tf = (FILE**) calloc(sizeof(FILE*), vcount); 
+    cedge_t** buf = (cedge_t**)calloc(sizeof(cedge_t), vcount); 
+    int64_t count = (1L<<30); 
+    gedge_t* edges = (gedge_t*)malloc(sizeof(gedge_t)*count);
+    gedge_t* edges2 = (gedge_t*)malloc(sizeof(gedge_t)*count);
+    
+    for( index_t ifile = 0; ifile < vcount; ++ifile) {
+        char tmp[64] = {0};
+        sprintf(tmp, ".%ld", ifile);
+        tfile[ifile] = idir + "/.tmp" + tmp;
+        tf[ifile] = fopen(tfile[ifile].c_str(), "wb+");
+        assert(tf[ifile] != NULL);
+        buf[ifile] = (cedge_t*)malloc(sizeof(cedge_t)*count);
+        cout << tfile[ifile] << endl;
+    }
+
+
+    //files
+    #ifdef HALF_GRID
+    matrix<spart_t, index_t> count_edge;
+    count_edge.init(p_v);
+    #else
+    matrix_f<spart_t, index_t> count_edge;
+    count_edge.init(p_v);
+    #endif
+    
+    //tiles
+    index_t total_s_part = calc_total_part(p_s);
+    _s_start_edge = (index_t*) calloc(sizeof(index_t), total_s_part);  
+    vert_degree = (degree_t*)calloc(sizeof(degree_t), vert_count);
+    
+
+    //Input Directory read
+    struct dirent *ptr;
+    DIR* dir;
+
+
+    dir = opendir(idir.c_str());
+    while (NULL != (ptr= readdir(dir))) {
+        if (ptr->d_name[0] == '.') continue;
+        edgefile = idir + "/" + string(ptr->d_name);
+        cout << "Reading " << edgefile << endl;
+
+        //read the file and convert it to first group
+        struct stat st_edge;
+        FILE* fid_edge = fopen(edgefile.c_str(), "rb");
+        stat(edgefile.c_str(), &st_edge);
+        assert(st_edge.st_size != 0);
+        //index_t nedges = st_edge.st_size/sizeof(gedge_t);
+        size_t to_read = st_edge.st_size/sizeof(gedge_t);
+        size_t sz_read = 0;
+        index_t ecount = 0;
+        sz_read = fread(edges2, sizeof(gedge_t), count, fid_edge);
+        assert(sz_read != 0);
+
+        while(to_read != 0) {
+            to_read -= sz_read; 
+            ecount = sz_read; 
+            swap(edges, edges2);
+            #pragma omp parallel num_threads(NUM_THDS) shared(edges,edges2) 
+            {
+                if (0 == omp_get_thread_num() && (to_read != 0)) {
+                    sz_read = fread(edges2, sizeof(gedge_t), count, fid_edge);
+                    if (sz_read == 0) {
+                        int err = ferror(fid_edge);
+                        cout << err << endl;
+                        exit(-1);
+                    }
+                    assert(sz_read != 0);
+                }
+
+                #ifdef HALF_GRID
+                matrix<spart_t, index_t> start_edge_half;
+                start_edge_half.part_count = p_p;
+                #endif
+
+                matrix_f<spart_t, index_t> start_edge_full;
+                start_edge_full.part_count = p_p;
+                matrix<spart_t, index_t>* s_start_edge;
+
+                gedge_t  edge;
+                part_t j, i;
+                part_t b_i, b_j;
+                spart_t s_i, s_j;
+                vertex_t v0, v1, v2, v3;
+                index_t offset;
+                #pragma omp for schedule (dynamic, 4096) 
+                for (index_t k = 0; k < ecount; ++k) {
+                    edge = edges[k];
+                    if (edge.is_self_loop()) continue;
+                    v2 = edge.get_v0();
+                    v3 = edge.get_v1();
+                    
+                    #ifdef HALF_GRID 
+                    v0 = min(v2, v3);
+                    v1 = max(v3, v2);
+                    #else
+                    v0 = v2;
+                    v1 = v3;
+                    #endif
+
+                    i = (v0 >> bit_shift0);
+                    j = (v1 >> bit_shift0);
+                
+                    index_t n = count_edge.get_index(i,j); 
+                    index_t m = count_edge.atomic_incr(n);
+
+                    buf[n][m].v0 = (v0 & part_mask0_2); 
+                    buf[n][m].v1 = (v1 & part_mask0_2); 
+                    
+                    b_i = (v0 >> bit_shift1);
+                    b_j = (v1 >> bit_shift1);
+                
+                    s_i = ((v0 >> bit_shift2) & part_mask3_2);
+                    s_j = ((v1 >> bit_shift2) & part_mask3_2);
+                    
+                    #ifdef HALF_GRID
+                    if (b_i == b_j) {
+                        s_start_edge = &start_edge_half;
+                        offset = beg_edge_offset1(b_i);
+                    } else {
+                        s_start_edge = &start_edge_full;
+                        offset = beg_edge_offset2(b_i, b_j);
+                    }
+                    #else	
+                    s_start_edge = &start_edge_full;
+                    offset = beg_edge_offset2(b_i, b_j);
+                    #endif
+                    
+                    s_start_edge->val = _s_start_edge + offset;
+                    s_start_edge->atomic_incr(s_i, s_j);
+
+                    __sync_fetch_and_add(vert_degree + edge.get_v0(), 1);
+                    #ifdef HALF_GRID
+                    __sync_fetch_and_add(vert_degree + edge.get_v1(), 1);
+                    #endif
+                }
+            } 
+            for (index_t ifile = 0; ifile < vcount; ++ifile) {
+                fwrite(buf[ifile], sizeof(cedge_t), count_edge.val[ifile], tf[ifile]);
+                count_edge.val[ifile] = 0;
+            }
+        }    
+        fclose(fid_edge);
+    }
+    closedir(dir);
+
+    //Read the file and convert it to first group.
+    
+    //Calculate the edge start
+    index_t prefix_sum = 0;
+    index_t curr_value = 0;
+    for (index_t ipart = 0; ipart < total_s_part; ++ipart) {
+        curr_value = _s_start_edge[ipart];
+        _s_start_edge[ipart] = prefix_sum;
+        prefix_sum += curr_value;
+    }
+    _s_start_edge[total_s_part] = prefix_sum;
+    cout << "Total edges = " << prefix_sum << endl;
+    
+    for (index_t ifile = 0; ifile < vcount; ++ifile) {
+        fclose(tf[ifile]);
+    }
+}
+
 void grid::pre_grid_big(string edgefile)
 {
     //Number of files in one row.
     index_t p_v = (vert_count >> bit_shift0);
-    cout << "p_v = " << p_v << endl;
 
     //Total number of files.
     index_t vcount = calc_total_part(p_v);
+    cout << "Creating " << vcount << " intermediate files, p_v =" << p_v << endl;
     
     string* tfile = new string [vcount];
     FILE** tf = (FILE**) calloc(sizeof(FILE*), vcount); 
@@ -392,6 +570,7 @@ void grid::pre_grid_big(string edgefile)
     size_t to_read = st_edge.st_size/sizeof(gedge_t);
     size_t sz_read = 0;
     index_t ecount = 0;
+    cout << "Reading " << edgefile << endl;
     sz_read = fread(edges2, sizeof(gedge_t), count, fid_edge);
     assert(sz_read != 0);
 
@@ -503,7 +682,18 @@ void grid::pre_grid_big(string edgefile)
 
 void grid::proc_grid_big(string edgefile, string part_file)
 {
-    pre_grid_big(edgefile);
+    struct stat sb;
+    bool is_dir = false;
+    if (stat(edgefile.c_str(), &sb) == 0) {
+        if (S_ISDIR(sb.st_mode)) {
+            is_dir = true;
+            pre_grid_dir(edgefile);
+        } else {
+            pre_grid_big(edgefile);
+        }
+    }
+
+    cout << "Intermediate files created" << endl;
     
     //Number of files in one row
     index_t p_v = (vert_count >> bit_shift0);
@@ -519,7 +709,7 @@ void grid::proc_grid_big(string edgefile, string part_file)
     cout << "size of grid file = " << _s_start_edge[total_s_part]*sizeof(edge_t) << endl;
     close(fd);
     */
-    FILE* f = fopen(file.c_str(), "wb+");
+    FILE* f = fopen(file.c_str(), "wb");
     assert(f != 0); 
     
     //Number of big partitions in a file row and buffer for each one
@@ -535,7 +725,11 @@ void grid::proc_grid_big(string edgefile, string part_file)
     
     //Read file[0]
     char tmp[64] = {0};
-    string tfile = edgefile + string(".0");
+    string basefile = edgefile;
+    if (is_dir) {
+        basefile += "/.tmp";
+    }
+    string tfile = basefile + string(".0");
     FILE* tf = fopen(tfile.c_str(), "rb");
     assert(tf != NULL);
     struct stat st;
@@ -597,7 +791,7 @@ void grid::proc_grid_big(string edgefile, string part_file)
                 if (0 == omp_get_thread_num() && (ifile < vcount)) {
                     //Read next file. i.e. file[ifile]
                     sprintf(tmp, ".%ld", ifile);
-                    tfile = edgefile + tmp;
+                    tfile = basefile + tmp;
                     tf = fopen(tfile.c_str(), "rb");
                     assert(tf != NULL);
                     cout << "Reading " << tfile << endl; 
