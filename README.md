@@ -15,17 +15,26 @@ We will be updating this file as and when required and will serve as help file.
 
 * `Graph generation and Conversion`: We have modified Graph500 generator little bit and have added the source code to generate a kronecker graph. Go inside `graph500-generator` directory and run 
   `make`. 
-    You need `mpi` to be installed. Thereafter run 
-   `./generator_test_mpi 25 16 1 1` (single-threaded, single file generated) or  
-   `mpirun -np 16 ./generator_test_mpi 25 16 1 1` (16 process, 16 files) 
+    You need `mpi` to be installed. Thereafter run: 
+    
+   `./generator_test_mpi 25 16 1 1` (single-threaded, single file generated) OR
    
-   to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). If you run multi-process one, than you need to concatenate all the generated files in one file (use cat filename >> singlefile). At the end you will get a binary edge-list file. Lets call the above generated file as *kron_25_16b.dat*. Its approximate size is 4GB. Kindly, note that this generator is not efficient and will take forever to generate a trillion edge graph. We have one more generator, and plenty of other conversion functions such as text to binary etc, and is shared in https://github.com/pradeep-k/gConv. Use that for bigger graph generation (or even smaller if you want). Let me know, if you need any further help.
+   `mpiexec -n 16 ./generator_test_mpi 25 16 1 1` (16 process, 16 files) 
+   
+   to generate an kronecker-25-16 graph. This will have 2^25 vertices and 2x16x2^25 edges (assuming undirected). 
+   
+   If you run multi-process one, than either you need to concatenate all the generated files in one file (use cat filename >> singlefile) or make a separate directory and put all the individual files there. At the end either you have a single binary edge-list file or a directory containing many binary edge files only. Lets call the above generated file/directory as *kron_25_16b.dat*. Its approximate size is 4GB. 
+   
+   Kindly, note that this generator is not efficient and will take forever to generate a trillion edge graph. We have one more generator, and plenty of other conversion functions such as text to binary etc, and is shared in https://github.com/pradeep-k/gConv. Use that for bigger graph generation (or works equally good for smaller one, if you want) using smaller memory footprint. Let me know, if you need any further help.
 
 * `Graph conversion`: Run following command to convert the *kron_25_16b.dat* to *tile based representation*:
 
-  `./gstoreu -s 25 -i kron_25_16b.dat -c 1 -o tile_25_16b.dat`
+  `./gstoreu -s 25 -i kron_25_16b.dat -c 1 -o tile_25_16b.dat` (if you have a single binary edge list file) OR
+  
+  `./gstoreu -s 25 -i kron_25_16b.dat -c 2 -o tile_25_16b.dat` ( either a single binary file or a directory of many binary files, uses less amount of memory, so better for bigger graphs but slower. This also generates few intermediate files that you need to delete manually by going to input file/directory localtion (ls -a)).
 
-  It will generate some files named tile_25_16b.dat.start, tile_25_16b.dat.grid etc. Graph convesion runs completely in-memory. So, for above conversion to be successful, you need more than 8 GB of memory. In case of you don't have that much memory, generate and convert a smaller sized graph. E.g. use 8 in place of 16 in the above two commands. It will generate a graph file of size 2GB. Also, we do have few option provided in the G-Store to convert bigger file to G-Store format. I will write help on that later. Let me know, if you need immediate help on this.
+  The above two will generate same final files, and are named tile_25_16b.dat.start, tile_25_16b.dat.grid etc. Graph convesion runs completely in-memory (first one) or used disks (2nd option). So, for above conversion to be successful, you need more than 8 GB of memory (for first option only). In case of you don't have that much memory, generate and convert a smaller sized graph or use second option. E.g. use 8 in place of 16 in the above two commands. It will generate a graph file of size 2GB. 
+ 
 
 * `Running page rank`: To run 5 iteration of pagerank job on scale 25 kronecker graph run following command.
 
