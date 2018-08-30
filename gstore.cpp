@@ -199,12 +199,12 @@ void grid::init(int argc, char * argv[])
         return ;
     case 2:
         proc_grid_big(edgefile, part_file, false);
-        save_grid_big(part_file);
+        save_grid_big(part_file, false);
         return;
     case 3:
         part_file += "/gstore";
         proc_grid_big(edgefile, part_file, true);
-        save_grid_big(part_file);
+        save_grid_big(part_file, true);
         return;
     case 4:
         text_to_bin(edgefile);
@@ -692,9 +692,6 @@ void grid::post_grid_dir(string edgefile, string part_file, bool is_dir)
     //Total number of files.
     index_t vcount = calc_total_part(p_v);
    
-    //The final edge file.
-    string file = part_file + ".grid";
-    
     //Number of physical groups in a file 
     index_t num_part = p/p_v;
     cout << "Physical groups in one intermediate file (in one direction) = " 
@@ -834,7 +831,7 @@ void grid::post_grid_dir(string edgefile, string part_file, bool is_dir)
 
                     //create the file to write. We incremented ifile earlier.
                     sprintf(tmp, ".%ld", ifile - 1);
-                    string ofile = file + tmp;
+                    string ofile = part_file + ".grid" + tmp;
                     FILE* f_sep = fopen(ofile.c_str(), "wb");
                     assert(f_sep != 0); 
 
@@ -958,7 +955,6 @@ void grid::post_grid_file(string edgefile, string part_file, bool is_dir)
             index_t base_b_i = (a*num_part);
             index_t buf_index = 0;
             
-        
             #ifdef HALF_GRID
             for (index_t b = a; b < p_v; ++b) 
             #else
@@ -1050,8 +1046,6 @@ void grid::post_grid_file(string edgefile, string part_file, bool is_dir)
                                        sizeof(index_t)*p_p*p_p);
                                 ecount[buf_index] = 0;
                                 offset = beg_edge_offset2(c, d + 1);
-                                
-
                             }
                         } else {
                             #endif
@@ -2830,27 +2824,94 @@ void grid::save_grid(string edgefile)
     index_t size = calc_total_part(p_s);
     fwrite(_edges, sizeof(edge_t), _s_start_edge[size], f);
     fclose(f);
-    save_meta_files(edgefile);
+    save_start_files(edgefile, false);
+    save_degree_files(edgefile);
 } 
 
-void grid::save_grid_big(string edgefile)
+void grid::save_grid_big(string edgefile, bool is_odir)
 {
-    save_meta_files(edgefile);
+    save_start_files(edgefile, is_odir);
+    save_degree_files(edgefile);
 }
 
-void grid::save_meta_files(string edgefile)
+void grid::save_start_files(string edgefile, bool is_odir)
 {
-    index_t size = calc_total_part(p_s);
-    string file = edgefile + ".start";
-    FILE* f = fopen(file.c_str(), "wb");
-    assert(f != 0);
-    fwrite(_s_start_edge, sizeof(index_t), size + 1, f);
-    fclose(f);
-    cout << _s_start_edge[size  - 1] << endl;
-    cout << _s_start_edge[size  ] << endl;
+    if (is_odir) {
+        //Number of files in one dimension 
+        index_t p_v = (vert_count >> bit_shift0);
+        
+        //Total number of files.
+        index_t vcount = calc_total_part(p_v);
+        index_t num_part = p/p_v;
+        index_t total_parts = num_part*num_part;
 
-    file = edgefile + ".degree";
-    f = fopen(file.c_str(), "wb");
+        
+        index_t* start_edge = (index_t*)calloc(sizeof(index_t), p_p*total_parts*p_p);
+        
+        for (index_t a = 0; a < p_v; ++a) {
+            index_t base_b_i = (a*num_part);
+            #ifdef HALF_GRID
+            for (index_t b = a; b < p_v; ++b) 
+            #else
+            for (index_t b = 0; b < p_v; ++b) 
+            #endif 
+            {
+                //The code is for each intermediate file
+                index_t base_tile_index = 0; 
+                index_t tile_count = 0, total_tile_count = 0;
+                index_t edge_count = 0, prefix = 0;
+                index_t base_b_j = (b*num_part);
+                index_t ifile = calc_index(a, b, p_v);
+                
+                // for each row of physical groups 
+                for (index_t c = base_b_i; c < base_b_i + num_part; ++c) {
+                    #ifdef HALF_GRID
+                    if (base_b_i == base_b_j) 
+                        base_tile_index = beg_edge_offset1(c);
+                    else
+                    #endif
+                        base_tile_index = beg_edge_offset2(c, base_b_j);
+                    
+                        
+                    tile_count = beg_edge_offset2(c, base_b_j + num_part) - base_tile_index;
+                    
+                    //For each tile in all physical groups in one row
+                    //The last iteration is for +1 that we follow, will be overwritten in 
+                    //next execution of this for loop
+                    for (index_t d = 0; d <= tile_count; ++d) {
+                        edge_count = _s_start_edge[base_tile_index + d] - _s_start_edge[base_tile_index];
+                        prefix += edge_count;
+                        start_edge[total_tile_count + d] = prefix;
+                    }
+                    total_tile_count += tile_count;
+                }
+                //Write the start_edge for each file
+                char tmp[32];
+                sprintf(tmp, ".%ld", ifile);
+                string file = edgefile + ".start" + tmp;
+                FILE* f = fopen(file.c_str(), "wb");
+                assert(f != 0);
+                fwrite(start_edge, sizeof(index_t), total_tile_count, f);
+                fclose(f);
+                cout << "Total Edges in file" << ifile << " = "<< prefix << endl;
+            }
+        }
+    }else {
+        index_t size = calc_total_part(p_s);
+        string file = edgefile + ".start";
+        FILE* f = fopen(file.c_str(), "wb");
+        assert(f != 0);
+        fwrite(_s_start_edge, sizeof(index_t), size + 1, f);
+        fclose(f);
+        //cout << _s_start_edge[size  - 1] << endl;
+        cout << "Total Edges again = "<< _s_start_edge[size] << endl;
+    }
+}
+
+void grid::save_degree_files(string edgefile)
+{
+    string file = edgefile + ".degree";
+    FILE* f = fopen(file.c_str(), "wb");
     assert(f != 0);
     fwrite(vert_degree, sizeof(degree_t), vert_count, f);
     fclose(f);

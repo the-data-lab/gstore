@@ -587,6 +587,8 @@ class grid {
 public:
     grid();
     ~grid();
+    
+    void init(int argc, char* argv[]);
 
     //In-memory conversions
     void pre_grid(string edgefile, gedge_t* edges, index_t nedges);
@@ -609,11 +611,11 @@ public:
 	void pre_csr(string edgefile, gedge_t* edges, index_t nedges);
     void proc_csr(string edgefile, string part_file);
 	
-	void compress_degree();
-    void init(int argc, char* argv[]);
     void save_grid(string edgefile);
-    void save_grid_big(string edgefile);
-    void save_meta_files(string edgefile);
+    void save_grid_big(string edgefile, bool is_odir);
+    void save_start_files(string edgefile, bool is_odir);
+    void save_degree_files(string edgefile);
+    void compress_degree();
 
 	void analyze_grid_size(string edgefile);
     
