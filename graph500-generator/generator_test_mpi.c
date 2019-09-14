@@ -104,7 +104,7 @@ int main(int argc, char** argv)
 		for(int j=0;j<256;j++)
 			filename[i][j]=(char *)malloc(sizeof(char)*256);
 	}
-/*
+
 //TEXT	
 	for(int i=0;i<row_par;i++)
 		for(int j=0;j<col_par;j++)
@@ -126,12 +126,8 @@ int main(int argc, char** argv)
 		//fprintf(fid[des/sz_col_par][src/sz_row_par],"%lu\t%lu\n",des,src);
 	}
 
-
-	for(int i=0;i<row_par;i++)
-		for(int j=0;j<col_par;j++)
-			fclose(fid[i][j]);	
-
-*/
+//--- end of text
+/*
 //BINARY
 	for(int i=0;i<row_par;i++)
 		for(int j=0;j<col_par;j++)
@@ -152,12 +148,12 @@ int main(int argc, char** argv)
 	
 		//store reverse edge
         //XXX: uncommet it.
-		/*result[i].v0=des;
-		result[i].v1=src;
-		fwrite(result+i,sizeof(packed_edge),1,fid[des/sz_row_par][src/sz_col_par]);
-        */
+		//result[i].v0=des;
+		//result[i].v1=src;
+		//fwrite(result+i,sizeof(packed_edge),1,fid[des/sz_row_par][src/sz_col_par]);
 	}
-
+*/
+//End of binary
 	for(int i=0;i<row_par;i++)
 		for(int j=0;j<col_par;j++)
 			fclose(fid[i][j]);
