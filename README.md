@@ -13,6 +13,7 @@ We will be updating this file as and when required and will serve as help file.
 ### How to run
 `gstore` has proposed a new storage format called *tile based represenation* which takes advantage of *symmetry* and *smallest number of bits (SNB)* format. So, a graph need to be converted in that format before you can run.  
 
+#### From Binary Graph File in edge list format
 * `Graph generation and Conversion`: We have modified Graph500 generator little bit and have added the source code to generate a kronecker graph. Go inside `graph500-generator` directory and run 
   `make`. 
     You need `mpi` to be installed. Thereafter run: 
@@ -42,7 +43,12 @@ We will be updating this file as and when required and will serve as help file.
 
 Please see gstore.cpp main() function for meaning of different parameter such as i, j, o, c, a etc. Changing j value to 0, 1, 2, 3 will allow you to run bfs, pagerank, wcc and kcore. Change a (meaning argument) to set either number of iterations for pagerank, or root vertex for bfs, or value of k for kcore, etc.
 
+#### From Graph Text file (in edge list format)
 
+Convert your text file to binary file,using following command:
+ `./gstoreu -i xyz.txt -c 4`
+ 
+ It will generate a binary file in the same directory where your input text file is. Then use the option of binary file discussed above.
 
 ### Things to tune:
 #### gstore.h
