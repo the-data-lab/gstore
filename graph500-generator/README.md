@@ -1,4 +1,8 @@
-Based on graph500 generator. It will genrate text graph files. Compilation require presence of MPI softwares. 
+Based on graph500 generator. It will genrate **text** graph files. If you need to generate binary graph file, either convert the text file to binary file, or comment out the text generation (line no. 108-129) and enable binary generation (line no 130-155) in the file https://github.com/the-data-lab/gstore/blob/master/graph500-generator/generator_test_mpi.c
+
+Alternately, use the generator https://github.com/pradeep-k/gConv for binary file generation. We plan to migrate to this generator anyway as it is scalable.
+
+Compilation require presence of MPI softwares. 
 But generation can be done in single machine.
 
 Steps:
